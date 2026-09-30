@@ -1,0 +1,11 @@
+{
+  "files": [],
+  "compilerOptions": {
+    "strict": true,          // Includes noImplicitAny
+    "noImplicitAny": true    // Throws errors if TypeScript defaults to 'any'
+  },
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
+}

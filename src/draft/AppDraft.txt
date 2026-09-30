@@ -1,0 +1,1935 @@
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import {
+  Globe,
+  Layers,
+  Activity,
+  Database,
+  Sliders,
+  BarChart2,
+  MapPin,
+  Search,
+  Code,
+  Radio,
+  Zap,
+  Mountain,
+  Plus,
+  Loader2,
+  Check,
+  Crosshair,
+  TrendingUp,
+  Cpu,
+  ShieldAlert,
+  Flame,
+  Waves,
+  Snowflake,
+  Play,
+  Pause,
+  Clock,
+  Sparkles,
+  Split,
+} from "lucide-react";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+} from "recharts";
+
+// --- Type Definitions replacing 'any' ---
+
+interface LeafletLatLng {
+  lat: number;
+  lng: number;
+}
+
+interface LeafletMouseEvent {
+  latlng: LeafletLatLng;
+}
+
+interface LeafletLayer {
+  addTo: (map: LeafletMap) => LeafletLayer;
+}
+
+type LeafletTileLayer = LeafletLayer;
+type LeafletImageOverlay = LeafletLayer;
+
+interface LeafletMap {
+  setView: (center: [number, number], zoom: number) => LeafletMap;
+  flyTo: (
+    center: [number, number],
+    zoom: number,
+    options?: { duration?: number },
+  ) => LeafletMap;
+  removeLayer: (layer: LeafletLayer) => LeafletMap;
+  on: (event: string, fn: (e: LeafletMouseEvent) => void) => LeafletMap;
+}
+
+interface LeafletNamespace {
+  map: (element: HTMLElement, options?: Record<string, unknown>) => LeafletMap;
+  tileLayer: (
+    url: string,
+    options?: Record<string, unknown>,
+  ) => LeafletTileLayer;
+  imageOverlay: (
+    url: string,
+    bounds: number[][],
+    options?: Record<string, unknown>,
+  ) => LeafletImageOverlay;
+  control: {
+    zoom: (options?: Record<string, unknown>) => {
+      addTo: (map: LeafletMap) => void;
+    };
+  };
+}
+
+declare global {
+  interface Window {
+    L: LeafletNamespace;
+  }
+}
+
+interface NominatimSearchResult {
+  display_name: string;
+  lat: string;
+  lon: string;
+  address?: {
+    country?: string;
+  };
+}
+
+interface NominatimReverseResult {
+  display_name?: string;
+}
+
+interface TimeDataPoint {
+  date: string;
+  lBand: number;
+  sBand: number;
+  displacement: number;
+  coherence: number;
+}
+
+interface HistogramBin {
+  range: string;
+  count: number;
+}
+
+interface Hotspot {
+  id: string;
+  name: string;
+  category: string;
+  icon: React.ComponentType<{ className?: string }>;
+  lat: number;
+  lng: number;
+  zoom: number;
+  spanLat: number;
+  spanLng: number;
+  band: string;
+  pol: string;
+  theme: string;
+  description: string;
+  unit: string;
+  preDate: string;
+  postDate: string;
+  timeData: TimeDataPoint[];
+  histogram: HistogramBin[];
+}
+
+const CURRENT_YEAR = new Date().getFullYear();
+const PREV_YEAR = CURRENT_YEAR - 1;
+
+const BASEMAPS = [
+  {
+    id: "satellite",
+    name: "Esri Satellite Imagery",
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    attribution: "Esri, Maxar, Earthstar Geographics",
+  },
+];
+
+const INITIAL_HOTSPOTS: Hotspot[] = [
+  {
+    id: "kilauea",
+    name: "Kīlauea Volcano, Hawaii",
+    category: "Deformation & Geohazards",
+    icon: Mountain,
+    lat: 19.4069,
+    lng: -155.2834,
+    zoom: 12,
+    spanLat: 0.12,
+    spanLng: 0.12,
+    band: "L-band (24 cm)",
+    pol: "HH",
+    theme: "Volcanic Inflation & Magma Chamber Displacement",
+    description: `Differential InSAR interferometry detects magma reservoir pressurization and flank deformation with millimeter-scale accuracy over Hawaii during active ${CURRENT_YEAR} monitoring.`,
+    unit: "mm/yr displacement",
+    preDate: `${PREV_YEAR}-11-10 (Pre-Eruption)`,
+    postDate: `${CURRENT_YEAR}-08-15 (Post-Inflation)`,
+    timeData: [
+      {
+        date: `${PREV_YEAR}-10`,
+        lBand: -6.2,
+        sBand: -8.1,
+        displacement: 4,
+        coherence: 0.94,
+      },
+      {
+        date: `${PREV_YEAR}-12`,
+        lBand: -6.1,
+        sBand: -8.0,
+        displacement: 18,
+        coherence: 0.92,
+      },
+      {
+        date: `${CURRENT_YEAR}-02`,
+        lBand: -6.5,
+        sBand: -8.4,
+        displacement: 52,
+        coherence: 0.88,
+      },
+      {
+        date: `${CURRENT_YEAR}-04`,
+        lBand: -7.0,
+        sBand: -9.1,
+        displacement: 98,
+        coherence: 0.84,
+      },
+      {
+        date: `${CURRENT_YEAR}-06`,
+        lBand: -6.8,
+        sBand: -8.7,
+        displacement: 142,
+        coherence: 0.86,
+      },
+      {
+        date: `${CURRENT_YEAR}-08`,
+        lBand: -6.3,
+        sBand: -8.2,
+        displacement: 185,
+        coherence: 0.89,
+      },
+      {
+        date: `${CURRENT_YEAR}-09`,
+        lBand: -6.0,
+        sBand: -7.9,
+        displacement: 210,
+        coherence: 0.91,
+      },
+    ],
+    histogram: [
+      { range: "-30 to -25", count: 45 },
+      { range: "-25 to -20", count: 120 },
+      { range: "-20 to -15", count: 340 },
+      { range: "-15 to -10", count: 890 },
+      { range: "-10 to -5", count: 1250 },
+      { range: "-5 to 0", count: 410 },
+    ],
+  },
+  {
+    id: "san_joaquin",
+    name: "San Joaquin Valley, California",
+    category: "Deformation & Geohazards",
+    icon: ShieldAlert,
+    lat: 36.5298,
+    lng: -119.8214,
+    zoom: 10,
+    spanLat: 0.25,
+    spanLng: 0.25,
+    band: "L-band (24 cm)",
+    pol: "VV",
+    theme: "Aquifer Compaction & Land Subsidence",
+    description: `Agricultural groundwater overdraft causes deep clay layer compaction, producing broad Line-of-Sight land subsidence bowls tracked continuously through ${CURRENT_YEAR}.`,
+    unit: "cm/yr subsidence",
+    preDate: `${PREV_YEAR}-09-15 (Baseline)`,
+    postDate: `${CURRENT_YEAR}-08-20 (Post-Pumping)`,
+    timeData: [
+      {
+        date: `${PREV_YEAR}-10`,
+        lBand: -12.4,
+        sBand: -15.1,
+        displacement: -12,
+        coherence: 0.89,
+      },
+      {
+        date: `${PREV_YEAR}-12`,
+        lBand: -12.8,
+        sBand: -15.6,
+        displacement: -35,
+        coherence: 0.86,
+      },
+      {
+        date: `${CURRENT_YEAR}-02`,
+        lBand: -13.1,
+        sBand: -16.0,
+        displacement: -68,
+        coherence: 0.83,
+      },
+      {
+        date: `${CURRENT_YEAR}-04`,
+        lBand: -13.5,
+        sBand: -16.8,
+        displacement: -105,
+        coherence: 0.8,
+      },
+      {
+        date: `${CURRENT_YEAR}-06`,
+        lBand: -13.9,
+        sBand: -17.2,
+        displacement: -142,
+        coherence: 0.77,
+      },
+      {
+        date: `${CURRENT_YEAR}-08`,
+        lBand: -14.2,
+        sBand: -17.8,
+        displacement: -180,
+        coherence: 0.75,
+      },
+      {
+        date: `${CURRENT_YEAR}-09`,
+        lBand: -14.0,
+        sBand: -17.4,
+        displacement: -215,
+        coherence: 0.79,
+      },
+    ],
+    histogram: [
+      { range: "-30 to -25", count: 150 },
+      { range: "-25 to -20", count: 620 },
+      { range: "-20 to -15", count: 1450 },
+      { range: "-15 to -10", count: 980 },
+      { range: "-10 to -5", count: 310 },
+      { range: "-5 to 0", count: 80 },
+    ],
+  },
+  {
+    id: "amazon_deforest",
+    name: "Rondônia, Amazon Rainforest",
+    category: "Ecosystems & Biomass",
+    icon: Flame,
+    lat: -10.8322,
+    lng: -62.8211,
+    zoom: 10,
+    spanLat: 0.2,
+    spanLng: 0.2,
+    band: "L-band (24 cm)",
+    pol: "HV",
+    theme: "Forest Canopy & Aboveground Biomass Loss",
+    description: `L-band radar wave canopy penetration measures volume scattering in woody biomass, detecting clear-cutting and forest degradation through ${CURRENT_YEAR}.`,
+    unit: "Mg/ha biomass",
+    preDate: `${PREV_YEAR}-10-01 (Intact Forest)`,
+    postDate: `${CURRENT_YEAR}-08-30 (Post-Logging)`,
+    timeData: [
+      {
+        date: `${PREV_YEAR}-10`,
+        lBand: -9.2,
+        sBand: -12.4,
+        displacement: 230,
+        coherence: 0.68,
+      },
+      {
+        date: `${PREV_YEAR}-12`,
+        lBand: -9.5,
+        sBand: -12.8,
+        displacement: 225,
+        coherence: 0.65,
+      },
+      {
+        date: `${CURRENT_YEAR}-02`,
+        lBand: -10.2,
+        sBand: -13.5,
+        displacement: 195,
+        coherence: 0.58,
+      },
+      {
+        date: `${CURRENT_YEAR}-04`,
+        lBand: -14.8,
+        sBand: -18.2,
+        displacement: 110,
+        coherence: 0.32,
+      },
+      {
+        date: `${CURRENT_YEAR}-06`,
+        lBand: -18.9,
+        sBand: -22.5,
+        displacement: 42,
+        coherence: 0.21,
+      },
+      {
+        date: `${CURRENT_YEAR}-08`,
+        lBand: -19.4,
+        sBand: -23.1,
+        displacement: 30,
+        coherence: 0.18,
+      },
+      {
+        date: `${CURRENT_YEAR}-09`,
+        lBand: -19.1,
+        sBand: -22.8,
+        displacement: 28,
+        coherence: 0.2,
+      },
+    ],
+    histogram: [
+      { range: "-30 to -25", count: 890 },
+      { range: "-25 to -20", count: 1120 },
+      { range: "-20 to -15", count: 650 },
+      { range: "-15 to -10", count: 320 },
+      { range: "-10 to -5", count: 180 },
+      { range: "-5 to 0", count: 40 },
+    ],
+  },
+  {
+    id: "thwaites",
+    name: "Thwaites Glacier, Antarctica",
+    category: "Cryosphere",
+    icon: Snowflake,
+    lat: -75.5,
+    lng: -106.8,
+    zoom: 8,
+    spanLat: 0.4,
+    spanLng: 0.4,
+    band: "L-band (24 cm)",
+    pol: "HH",
+    theme: "Ice Velocity & Grounding Line Dynamics",
+    description: `Repeat-pass interferometry tracks high-velocity ice stream flow vectors and grounding line ungrounding along ocean ice shelves during ${CURRENT_YEAR} observations.`,
+    unit: "m/yr velocity",
+    preDate: `${PREV_YEAR}-11-10 (Summer Flow)`,
+    postDate: `${CURRENT_YEAR}-07-20 (Winter Acceleration)`,
+    timeData: [
+      {
+        date: `${PREV_YEAR}-10`,
+        lBand: -8.1,
+        sBand: -11.0,
+        displacement: 2150,
+        coherence: 0.93,
+      },
+      {
+        date: `${PREV_YEAR}-12`,
+        lBand: -7.9,
+        sBand: -10.8,
+        displacement: 2280,
+        coherence: 0.91,
+      },
+      {
+        date: `${CURRENT_YEAR}-02`,
+        lBand: -8.3,
+        sBand: -11.2,
+        displacement: 2360,
+        coherence: 0.89,
+      },
+      {
+        date: `${CURRENT_YEAR}-04`,
+        lBand: -8.5,
+        sBand: -11.5,
+        displacement: 2450,
+        coherence: 0.88,
+      },
+      {
+        date: `${CURRENT_YEAR}-06`,
+        lBand: -8.2,
+        sBand: -11.1,
+        displacement: 2520,
+        coherence: 0.9,
+      },
+      {
+        date: `${CURRENT_YEAR}-08`,
+        lBand: -8.0,
+        sBand: -10.7,
+        displacement: 2600,
+        coherence: 0.92,
+      },
+      {
+        date: `${CURRENT_YEAR}-09`,
+        lBand: -7.8,
+        sBand: -10.4,
+        displacement: 2680,
+        coherence: 0.94,
+      },
+    ],
+    histogram: [
+      { range: "-30 to -25", count: 50 },
+      { range: "-25 to -20", count: 180 },
+      { range: "-20 to -15", count: 540 },
+      { range: "-15 to -10", count: 1420 },
+      { range: "-10 to -5", count: 980 },
+      { range: "-5 to 0", count: 210 },
+    ],
+  },
+  {
+    id: "brahmaputra",
+    name: "Brahmaputra Basin, India / Bangladesh",
+    category: "Hydrology & Wetlands",
+    icon: Waves,
+    lat: 26.1833,
+    lng: 91.7333,
+    zoom: 10,
+    spanLat: 0.22,
+    spanLng: 0.22,
+    band: "S-band (12 cm)",
+    pol: "VV",
+    theme: "Monsoon Surface Inundation & Flood Extent",
+    description: `Specular reflection on open water surfaces causes strong backscatter attenuation (drop to <-20 dB), isolating ${CURRENT_YEAR} monsoon flood boundaries.`,
+    unit: "% Inundated Area",
+    preDate: `${CURRENT_YEAR}-03-10 (Pre-Monsoon)`,
+    postDate: `${CURRENT_YEAR}-08-15 (Peak Flood)`,
+    timeData: [
+      {
+        date: `${PREV_YEAR}-10`,
+        lBand: -11.2,
+        sBand: -14.2,
+        displacement: 12,
+        coherence: 0.78,
+      },
+      {
+        date: `${PREV_YEAR}-12`,
+        lBand: -11.8,
+        sBand: -14.9,
+        displacement: 10,
+        coherence: 0.81,
+      },
+      {
+        date: `${CURRENT_YEAR}-02`,
+        lBand: -13.5,
+        sBand: -17.1,
+        displacement: 28,
+        coherence: 0.68,
+      },
+      {
+        date: `${CURRENT_YEAR}-04`,
+        lBand: -22.8,
+        sBand: -26.4,
+        displacement: 88,
+        coherence: 0.24,
+      },
+      {
+        date: `${CURRENT_YEAR}-06`,
+        lBand: -24.5,
+        sBand: -28.1,
+        displacement: 94,
+        coherence: 0.19,
+      },
+      {
+        date: `${CURRENT_YEAR}-08`,
+        lBand: -16.2,
+        sBand: -19.5,
+        displacement: 45,
+        coherence: 0.52,
+      },
+      {
+        date: `${CURRENT_YEAR}-09`,
+        lBand: -12.0,
+        sBand: -14.8,
+        displacement: 18,
+        coherence: 0.74,
+      },
+    ],
+    histogram: [
+      { range: "-30 to -25", count: 1480 },
+      { range: "-25 to -20", count: 920 },
+      { range: "-20 to -15", count: 410 },
+      { range: "-15 to -10", count: 220 },
+      { range: "-10 to -5", count: 120 },
+      { range: "-5 to 0", count: 30 },
+    ],
+  },
+];
+
+const SAR_MODES = [
+  { id: "backscatter", name: "Backscatter Intensity (dB)", icon: "📡" },
+  { id: "insar_phase", name: "InSAR Phase Fringes (-π to +π)", icon: "🌀" },
+  { id: "rgb_composite", name: "RGB Dual-Pol Composite (HH/HV)", icon: "🎨" },
+  { id: "coherence", name: "Interferometric Coherence (γ)", icon: "⚡" },
+];
+
+const COLOR_PALETTES: Record<string, { name: string; colors: string[] }> = {
+  viridis: {
+    name: "Viridis (Biomass/Reflectivity)",
+    colors: ["#440154", "#3b528b", "#21908d", "#5dc963", "#fde725"],
+  },
+  phase_wrap: {
+    name: "Phase Cyclic (InSAR Fringes)",
+    colors: [
+      "#ff0000",
+      "#ffff00",
+      "#00ff00",
+      "#00ffff",
+      "#0000ff",
+      "#ff00ff",
+      "#ff0000",
+    ],
+  },
+  magma: {
+    name: "Magma (Thermal/Volcanic)",
+    colors: ["#000004", "#3b0f70", "#8c2981", "#de4968", "#fe9f6d", "#fcfdbf"],
+  },
+  seismic: {
+    name: "Seismological Red-Blue (LOS)",
+    colors: [
+      "#053061",
+      "#2166ac",
+      "#4393c3",
+      "#f7f7f7",
+      "#d6604d",
+      "#b2182b",
+      "#67001f",
+    ],
+  },
+  jet: {
+    name: "Jet Classic SAR Spectrum",
+    colors: ["#000080", "#0000ff", "#00ffff", "#ffff00", "#ff0000", "#800000"],
+  },
+};
+
+const createSyntheticHotspot = (
+  name: string,
+  lat: number | string,
+  lng: number | string,
+  category = "Custom Earth Target",
+): Hotspot => {
+  const numLat = typeof lat === "string" ? parseFloat(lat) : lat;
+  const numLng = typeof lng === "string" ? parseFloat(lng) : lng;
+
+  return {
+    id: `custom_${Date.now()}`,
+    name: name,
+    category: category,
+    icon: MapPin,
+    lat: numLat,
+    lng: numLng,
+    zoom: 11,
+    spanLat: 0.2,
+    spanLng: 0.2,
+    band: "L-band (24 cm)",
+    pol: "HH",
+    theme: `User Defined Radar Target Zone (${CURRENT_YEAR})`,
+    description: `Custom Earth location target centered at coordinates ${numLat.toFixed(4)}°, ${numLng.toFixed(4)}° observed during ${CURRENT_YEAR} science operations.`,
+    unit: "mm/yr deformation",
+    preDate: `${PREV_YEAR}-10-01 (Baseline T1)`,
+    postDate: `${CURRENT_YEAR}-09-15 (Repeat Pass T2)`,
+    timeData: [
+      {
+        date: `${PREV_YEAR}-10`,
+        lBand: -10.2,
+        sBand: -13.1,
+        displacement: 0,
+        coherence: 0.91,
+      },
+      {
+        date: `${PREV_YEAR}-12`,
+        lBand: -10.5,
+        sBand: -13.4,
+        displacement: 12,
+        coherence: 0.88,
+      },
+      {
+        date: `${CURRENT_YEAR}-02`,
+        lBand: -11.0,
+        sBand: -14.1,
+        displacement: 28,
+        coherence: 0.85,
+      },
+      {
+        date: `${CURRENT_YEAR}-04`,
+        lBand: -11.8,
+        sBand: -15.0,
+        displacement: 45,
+        coherence: 0.81,
+      },
+      {
+        date: `${CURRENT_YEAR}-06`,
+        lBand: -12.4,
+        sBand: -15.8,
+        displacement: 68,
+        coherence: 0.78,
+      },
+      {
+        date: `${CURRENT_YEAR}-08`,
+        lBand: -12.1,
+        sBand: -15.5,
+        displacement: 82,
+        coherence: 0.8,
+      },
+      {
+        date: `${CURRENT_YEAR}-09`,
+        lBand: -11.5,
+        sBand: -14.9,
+        displacement: 95,
+        coherence: 0.83,
+      },
+    ],
+    histogram: [
+      { range: "-30 to -25", count: 110 },
+      { range: "-25 to -20", count: 480 },
+      { range: "-20 to -15", count: 1210 },
+      { range: "-15 to -10", count: 850 },
+      { range: "-10 to -5", count: 320 },
+      { range: "-5 to 0", count: 90 },
+    ],
+  };
+};
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState("map");
+  const [hotspots, setHotspots] = useState<Hotspot[]>(INITIAL_HOTSPOTS);
+  const [selectedSpot, setSelectedSpot] = useState<Hotspot>(
+    INITIAL_HOTSPOTS[0],
+  );
+  const [selectedBasemap] = useState(BASEMAPS[0]);
+
+  // Real-Time Motion State
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [timeOffset, setTimeOffset] = useState(0);
+  const [animSpeed, setAnimSpeed] = useState(1);
+
+  // Search & Custom Locations
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<NominatimSearchResult[]>(
+    [],
+  );
+  const [searchError, setSearchError] = useState("");
+  const [showManualForm, setShowManualForm] = useState(false);
+  const [manualName, setManualName] = useState("");
+  const [manualLat, setManualLat] = useState("");
+  const [manualLng, setManualLng] = useState("");
+
+  // NISAR Controls
+  const [radarBand, setRadarBand] = useState("L-band");
+  const [polarization, setPolarization] = useState("HH");
+  const [sarMode, setSarMode] = useState("insar_phase");
+  const [colormap, setColormap] = useState("phase_wrap");
+  const [opacity, setOpacity] = useState(0.85);
+  const [overlaySize, setOverlaySize] = useState(0.2);
+  const [dbCutoff] = useState(-28);
+  const [fringeScale] = useState(14);
+  const [speckleFilter] = useState(true);
+
+  // Split View & Telemetry
+  const [splitView, setSplitView] = useState(false);
+  const [leafletLoaded, setLeafletLoaded] = useState(false);
+
+  const [inspectedPixel, setInspectedPixel] = useState({
+    db: "-12.4",
+    phase: "1.20 rad (+14 mm)",
+    coherence: "0.88",
+    lat: INITIAL_HOTSPOTS[0].lat.toFixed(4),
+    lng: INITIAL_HOTSPOTS[0].lng.toFixed(4),
+  });
+
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<LeafletMap | null>(null);
+  const tileLayerRef = useRef<LeafletTileLayer | null>(null);
+  const sarOverlayRefT1 = useRef<LeafletImageOverlay | null>(null);
+  const sarOverlayRefT2 = useRef<LeafletImageOverlay | null>(null);
+  const handleMapClickRef = useRef<
+    ((lat: number, lng: number) => Promise<void>) | null
+  >(null);
+
+  const handleMapClick = async (lat: number, lng: number) => {
+    const latFixed = parseFloat(lat.toFixed(4));
+    const lngFixed = parseFloat(lng.toFixed(4));
+
+    let locationName = `Selected Target (${latFixed}°, ${lngFixed}°)`;
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latFixed}&lon=${lngFixed}`,
+      );
+      const data = (await res.json()) as NominatimReverseResult;
+      if (data && data.display_name) {
+        const parts = data.display_name.split(",");
+        locationName = `${parts[0].trim()}${parts[1] ? ", " + parts[1].trim() : ""}`;
+      }
+    } catch {
+      // Fallback location name
+    }
+
+    const newSpot = createSyntheticHotspot(
+      locationName,
+      latFixed,
+      lngFixed,
+      "Map Clicked Target",
+    );
+
+    setHotspots((prev) => [
+      newSpot,
+      ...prev.filter((h) => h.id !== newSpot.id),
+    ]);
+    setSelectedSpot(newSpot);
+  };
+
+  useEffect(() => {
+    handleMapClickRef.current = handleMapClick;
+  });
+
+  useEffect(() => {
+    let animId: number | undefined;
+    if (isPlaying) {
+      const animate = () => {
+        setTimeOffset((prev) => (prev + 0.04 * animSpeed) % (2 * Math.PI * 50));
+        animId = requestAnimationFrame(animate);
+      };
+      animId = requestAnimationFrame(animate);
+    }
+    return () => {
+      if (animId !== undefined) cancelAnimationFrame(animId);
+    };
+  }, [isPlaying, animSpeed]);
+
+  useEffect(() => {
+    if (!document.getElementById("leaflet-css")) {
+      const link = document.createElement("link");
+      link.id = "leaflet-css";
+      link.rel = "stylesheet";
+      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      document.head.appendChild(link);
+    }
+
+    if (window.L) {
+      queueMicrotask(() => setLeafletLoaded(true));
+    } else {
+      const script = document.createElement("script");
+      script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+      script.onload = () => setLeafletLoaded(true);
+      document.head.appendChild(script);
+    }
+  }, []);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      if (sarMode === "insar_phase") setColormap("phase_wrap");
+      else if (sarMode === "backscatter") setColormap("viridis");
+      else if (sarMode === "coherence") setColormap("magma");
+      else if (sarMode === "rgb_composite") setColormap("jet");
+    });
+  }, [sarMode]);
+
+  const generateSarDataUrl = useCallback(
+    (isPost = false, tOffset = timeOffset) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 500;
+      canvas.height = 500;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return "";
+      const w = canvas.width;
+      const h = canvas.height;
+
+      const imgData = ctx.createImageData(w, h);
+      const data = imgData.data;
+
+      const palette =
+        COLOR_PALETTES[colormap]?.colors || COLOR_PALETTES.viridis.colors;
+      const paletteLen = palette.length;
+
+      const centerX = w / 2;
+      const centerY = h / 2;
+
+      const hexToRgb = (hex: string) => {
+        const clean = hex.replace("#", "");
+        return {
+          r: parseInt(clean.substring(0, 2), 16),
+          g: parseInt(clean.substring(2, 4), 16),
+          b: parseInt(clean.substring(4, 6), 16),
+        };
+      };
+
+      const parsedPalette = palette.map(hexToRgb);
+
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const pixelIdx = (y * w + x) * 4;
+
+          const dx = (x - centerX) / (w / 2);
+          const dy = (y - centerY) / (h / 2);
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          const speckle = speckleFilter
+            ? (Math.random() - 0.5) * 0.08
+            : (Math.random() - 0.5) * 0.25;
+
+          let value: number;
+
+          if (sarMode === "insar_phase") {
+            const deformationMult = isPost
+              ? fringeScale * 1.8
+              : fringeScale * 0.8;
+            const phaseValue = Math.sin(
+              dist * deformationMult +
+                Math.atan2(dy, dx) * 2 +
+                tOffset +
+                speckle * 3,
+            );
+            value = (phaseValue + 1) / 2;
+          } else if (sarMode === "backscatter") {
+            const wavelengthFactor = radarBand === "L-band" ? 1.0 : 1.4;
+            const polFactor =
+              polarization === "HV" || polarization === "VH" ? 0.6 : 1.0;
+            const baseBg =
+              (1 - Math.min(1, dist)) * wavelengthFactor * polFactor;
+            const eventDrop =
+              isPost && selectedSpot.id === "brahmaputra" ? 0.2 : 1.0;
+            value = Math.max(0, Math.min(1, (baseBg + speckle) * eventDrop));
+          } else if (sarMode === "coherence") {
+            const decay = isPost ? dist * 0.9 : dist * 0.3;
+            value = Math.max(0.1, Math.min(0.98, 1 - decay + speckle * 0.5));
+          } else {
+            const rComp = Math.sin(dx * 4 + tOffset) * 0.5 + 0.5;
+            const gComp = Math.cos(dy * 4 + tOffset) * 0.5 + 0.5;
+            value = (rComp + gComp) / 2 + speckle;
+          }
+
+          const calculatedDb = (value - 1) * 35;
+          if (calculatedDb < dbCutoff) {
+            data[pixelIdx + 3] = 0;
+            continue;
+          }
+
+          const colorIdx = Math.min(
+            paletteLen - 1,
+            Math.floor(value * paletteLen),
+          );
+          const color = parsedPalette[colorIdx] || parsedPalette[0];
+
+          data[pixelIdx] = color.r;
+          data[pixelIdx + 1] = color.g;
+          data[pixelIdx + 2] = color.b;
+          data[pixelIdx + 3] = Math.floor(opacity * 255);
+        }
+      }
+
+      ctx.putImageData(imgData, 0, 0);
+      return canvas.toDataURL();
+    },
+    [
+      colormap,
+      speckleFilter,
+      sarMode,
+      fringeScale,
+      radarBand,
+      polarization,
+      selectedSpot.id,
+      dbCutoff,
+      opacity,
+      timeOffset,
+    ],
+  );
+
+  useEffect(() => {
+    if (!leafletLoaded || !mapContainerRef.current) return;
+    const L = window.L;
+
+    if (!mapInstanceRef.current) {
+      const map = L.map(mapContainerRef.current, {
+        zoomControl: false,
+        attributionControl: false,
+      }).setView([selectedSpot.lat, selectedSpot.lng], selectedSpot.zoom);
+
+      L.control.zoom({ position: "bottomright" }).addTo(map);
+
+      tileLayerRef.current = L.tileLayer(selectedBasemap.url, {
+        maxZoom: 18,
+        attribution: selectedBasemap.attribution,
+      }).addTo(map);
+
+      map.on("click", (e: LeafletMouseEvent) => {
+        if (handleMapClickRef.current) {
+          handleMapClickRef.current(e.latlng.lat, e.latlng.lng);
+        }
+      });
+
+      map.on("mousemove", (e: LeafletMouseEvent) => {
+        const { lat, lng } = e.latlng;
+        const dLat = lat - selectedSpot.lat;
+        const dLng = lng - selectedSpot.lng;
+        const dist = Math.sqrt(dLat * dLat + dLng * dLng) * 10;
+
+        const dbVal = (-12 - dist * 12 + (Math.random() - 0.5) * 2).toFixed(1);
+        const phaseValNum = ((dist * fringeScale) % (2 * Math.PI)) - Math.PI;
+        const phaseVal = phaseValNum.toFixed(2);
+        const cohVal = Math.max(0.12, 0.95 - dist * 0.4).toFixed(2);
+
+        setInspectedPixel({
+          db: dbVal,
+          phase: `${phaseVal} rad (${(phaseValNum * 12).toFixed(1)} mm)`,
+          coherence: cohVal,
+          lat: lat.toFixed(4),
+          lng: lng.toFixed(4),
+        });
+      });
+
+      mapInstanceRef.current = map;
+    }
+  }, [
+    fringeScale,
+    leafletLoaded,
+    selectedBasemap.attribution,
+    selectedBasemap.url,
+    selectedSpot.lat,
+    selectedSpot.lng,
+    selectedSpot.zoom,
+  ]);
+
+  useEffect(() => {
+    if (!mapInstanceRef.current || !leafletLoaded) return;
+    const L = window.L;
+    const map = mapInstanceRef.current;
+
+    map.flyTo([selectedSpot.lat, selectedSpot.lng], selectedSpot.zoom, {
+      duration: 1.5,
+    });
+
+    if (tileLayerRef.current) {
+      map.removeLayer(tileLayerRef.current);
+    }
+    tileLayerRef.current = L.tileLayer(selectedBasemap.url, {
+      maxZoom: 18,
+      attribution: selectedBasemap.attribution,
+    }).addTo(map);
+  }, [selectedSpot, selectedBasemap, leafletLoaded]);
+
+  useEffect(() => {
+    if (!mapInstanceRef.current || !leafletLoaded) return;
+    const L = window.L;
+    const map = mapInstanceRef.current;
+
+    const spanLat = overlaySize;
+    const spanLng = overlaySize;
+
+    const bounds = [
+      [selectedSpot.lat - spanLat / 2, selectedSpot.lng - spanLng / 2],
+      [selectedSpot.lat + spanLat / 2, selectedSpot.lng + spanLng / 2],
+    ];
+
+    if (sarOverlayRefT1.current) map.removeLayer(sarOverlayRefT1.current);
+    if (sarOverlayRefT2.current) map.removeLayer(sarOverlayRefT2.current);
+
+    const dataUrlT1 = generateSarDataUrl(false, timeOffset);
+    sarOverlayRefT1.current = L.imageOverlay(dataUrlT1, bounds, {
+      opacity: opacity,
+      interactive: false,
+    }).addTo(map);
+
+    if (splitView) {
+      const dataUrlT2 = generateSarDataUrl(true, timeOffset);
+      sarOverlayRefT2.current = L.imageOverlay(dataUrlT2, bounds, {
+        opacity: opacity,
+        interactive: false,
+      }).addTo(map);
+    }
+  }, [
+    selectedSpot,
+    radarBand,
+    polarization,
+    sarMode,
+    colormap,
+    opacity,
+    overlaySize,
+    dbCutoff,
+    fringeScale,
+    speckleFilter,
+    splitView,
+    leafletLoaded,
+    timeOffset,
+    generateSarDataUrl,
+  ]);
+
+  const handleLocationSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+
+    setIsSearching(true);
+    setSearchError("");
+    setSearchResults([]);
+
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+          searchQuery,
+        )}&limit=5`,
+      );
+      const data = (await response.json()) as NominatimSearchResult[];
+
+      if (data && data.length > 0) {
+        setSearchResults(data);
+      } else {
+        setSearchError("No places found matching your query.");
+      }
+    } catch {
+      setSearchError("Geocoding request failed.");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSelectSearchResult = (result: NominatimSearchResult) => {
+    const newSpot = createSyntheticHotspot(
+      result.display_name.split(",")[0] +
+        " (" +
+        (result.address?.country || "Custom") +
+        ")",
+      result.lat,
+      result.lon,
+      "Geocoded Target",
+    );
+
+    setHotspots([newSpot, ...hotspots]);
+    setSelectedSpot(newSpot);
+    setSearchResults([]);
+    setSearchQuery("");
+  };
+
+  const handleAddManualLocation = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualName || !manualLat || !manualLng) return;
+
+    const newSpot = createSyntheticHotspot(
+      manualName,
+      manualLat,
+      manualLng,
+      "Manual Lat/Lng Target",
+    );
+
+    setHotspots([newSpot, ...hotspots]);
+    setSelectedSpot(newSpot);
+    setManualName("");
+    setManualLat("");
+    setManualLng("");
+    setShowManualForm(false);
+  };
+
+  return (
+    <div className="flex flex-col h-screen bg-black text-white font-sans overflow-hidden select-none">
+      {/* Header Bar */}
+      <header className="h-16 border-b border-neutral-800/80 bg-black/90 backdrop-blur-2xl px-6 flex items-center justify-between shrink-0 z-40">
+        {/* Brand Title & Pulse Badge */}
+        <div className="flex items-center space-x-3.5">
+          <div className="relative">
+            <div className="w-9 h-9 rounded-2xl bg-neutral-900 border border-neutral-700/80 flex items-center justify-center shadow-lg">
+              <Globe className="w-5 h-5 text-white animate-pulse" />
+            </div>
+            <span className="absolute -bottom-0.5 -right-0.5 flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+          </div>
+          <div>
+            <div className="flex items-center space-x-2">
+              <h1 className="font-extrabold text-sm tracking-wider text-white uppercase">
+                NISAR Ground Station
+              </h1>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-neutral-900 text-neutral-300 border border-neutral-700 flex items-center space-x-1">
+                <Sparkles className="w-3 h-3 text-cyan-400" />
+                <span>{CURRENT_YEAR} Active Science Stream</span>
+              </span>
+            </div>
+            <p className="text-[11px] text-neutral-400">
+              NASA-ISRO Synthetic Aperture Radar Operational Surface Visualizer
+            </p>
+          </div>
+        </div>
+
+        {/* Navigation Tabs */}
+        <div className="flex items-center bg-neutral-900/90 p-1 rounded-full border border-neutral-800 text-xs font-semibold shadow-inner">
+          <button
+            onClick={() => setActiveTab("map")}
+            className={`flex items-center space-x-2 px-5 py-1.5 rounded-full transition-all duration-200 active:scale-95 ${
+              activeTab === "map"
+                ? "bg-neutral-800 text-white border border-neutral-600/80 shadow-lg"
+                : "bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white hover:bg-neutral-800/80"
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5" />
+            <span>Interactive Map</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("analytics")}
+            className={`flex items-center space-x-2 px-5 py-1.5 rounded-full transition-all duration-200 active:scale-95 ${
+              activeTab === "analytics"
+                ? "bg-neutral-800 text-white border border-neutral-600/80 shadow-lg"
+                : "bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white hover:bg-neutral-800/80"
+            }`}
+          >
+            <BarChart2 className="w-3.5 h-3.5" />
+            <span>InSAR Analytics</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("pipeline")}
+            className={`flex items-center space-x-2 px-5 py-1.5 rounded-full transition-all duration-200 active:scale-95 ${
+              activeTab === "pipeline"
+                ? "bg-neutral-800 text-white border border-neutral-600/80 shadow-lg"
+                : "bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white hover:bg-neutral-800/80"
+            }`}
+          >
+            <Code className="w-3.5 h-3.5" />
+            <span>STAC API Pipeline</span>
+          </button>
+        </div>
+
+        {/* Orbit Telemetry Pills */}
+        <div className="hidden lg:flex items-center space-x-3 text-xs font-mono">
+          <div className="bg-neutral-900 border border-neutral-800 px-3 py-1.5 rounded-full text-neutral-300 flex items-center space-x-2">
+            <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+            <span>Orbit: 12-Day Repeat ({CURRENT_YEAR} Science Ops)</span>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex overflow-hidden relative">
+        {activeTab === "map" && (
+          <>
+            <aside className="w-80 bg-neutral-950 border-r border-neutral-800 flex flex-col z-30 shrink-0 overflow-y-auto">
+              <div className="p-4 space-y-5">
+                {/* Basemap Selection */}
+                <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-3.5 shadow-xl space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-white">
+                    <span className="uppercase tracking-wider text-[11px] text-neutral-400">
+                      Basemap Layer
+                    </span>
+                    <Layers className="w-4 h-4 text-neutral-400" />
+                  </div>
+                  <div className="bg-black border border-neutral-700/80 p-2.5 rounded-xl text-xs font-medium text-white flex items-center justify-between shadow-inner">
+                    <span className="flex items-center space-x-2">
+                      <Globe className="w-4 h-4 text-cyan-400" />
+                      <span>Esri Satellite Imagery</span>
+                    </span>
+                    <Check className="w-4 h-4 text-emerald-400" />
+                  </div>
+                </div>
+
+                {/* NISAR Mission Status */}
+                <div className="bg-neutral-900 border border-neutral-800 p-3.5 rounded-2xl space-y-1.5 shadow-xl">
+                  <div className="flex items-center space-x-2 text-xs font-bold text-white">
+                    <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
+                    <span>NASA-ISRO NISAR Operations ({CURRENT_YEAR})</span>
+                  </div>
+                  <p className="text-[11px] text-neutral-400 leading-relaxed">
+                    Utilizing live radar remote sensing streams from the active{" "}
+                    <strong>NASA-ISRO Synthetic Aperture Radar (NISAR)</strong>{" "}
+                    mission for sub-centimeter global surface deformation
+                    tracking.
+                  </p>
+                </div>
+
+                {/* Search Target Section */}
+                <div className="pt-2 border-t border-neutral-800/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center space-x-1.5">
+                      <Search className="w-3.5 h-3.5 text-white" />
+                      <span>Search Location</span>
+                    </label>
+                    <button
+                      onClick={() => setShowManualForm(!showManualForm)}
+                      className="bg-neutral-900 border border-neutral-700 text-white hover:bg-neutral-800 text-[10px] font-mono px-2.5 py-1 rounded-full flex items-center space-x-1 transition active:scale-95"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>
+                        {showManualForm ? "Hide Lat/Lng" : "Manual Lat/Lng"}
+                      </span>
+                    </button>
+                  </div>
+
+                  <form
+                    onSubmit={handleLocationSearch}
+                    className="flex space-x-2"
+                  >
+                    <input
+                      type="text"
+                      placeholder="e.g. Mount Vesuvius, Tokyo..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="flex-1 bg-black border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-neutral-600 transition"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isSearching}
+                      className="bg-neutral-900 border border-neutral-700 text-white hover:bg-neutral-800 px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-center transition active:scale-95 shrink-0"
+                    >
+                      {isSearching ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Search className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </form>
+
+                  {searchError && (
+                    <div className="text-[11px] text-rose-300 bg-rose-950/40 border border-rose-800 p-2.5 rounded-xl">
+                      {searchError}
+                    </div>
+                  )}
+
+                  {searchResults.length > 0 && (
+                    <div className="bg-black border border-neutral-800 rounded-2xl p-2 space-y-1 shadow-2xl">
+                      <div className="text-[10px] text-neutral-400 font-mono px-2 py-1 border-b border-neutral-800">
+                        Geocoded Locations:
+                      </div>
+                      {searchResults.map((res, index) => (
+                        <button
+                          key={index}
+                          onClick={() => handleSelectSearchResult(res)}
+                          className="w-full text-left p-2.5 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-neutral-700 transition text-xs flex items-center justify-between text-white active:scale-95"
+                        >
+                          <span className="truncate text-white font-medium">
+                            {res.display_name}
+                          </span>
+                          <span className="font-mono text-[9px] text-neutral-400 ml-2 shrink-0">
+                            {parseFloat(res.lat).toFixed(2)}°,{" "}
+                            {parseFloat(res.lon).toFixed(2)}°
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {showManualForm && (
+                    <form
+                      onSubmit={handleAddManualLocation}
+                      className="bg-neutral-900 p-3.5 rounded-2xl border border-neutral-800 space-y-2.5"
+                    >
+                      <div className="text-[10px] text-white font-bold uppercase tracking-wider">
+                        Manual Coordinates Input
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Target Name (e.g. Rotterdam Port)"
+                        value={manualName}
+                        onChange={(e) => setManualName(e.target.value)}
+                        className="w-full bg-black border border-neutral-800 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-neutral-500 focus:outline-none"
+                        required
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="number"
+                          step="any"
+                          placeholder="Lat (-90 to 90)"
+                          value={manualLat}
+                          onChange={(e) => setManualLat(e.target.value)}
+                          className="bg-black border border-neutral-800 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-neutral-500 focus:outline-none"
+                          required
+                        />
+                        <input
+                          type="number"
+                          step="any"
+                          placeholder="Lng (-180 to 180)"
+                          value={manualLng}
+                          onChange={(e) => setManualLng(e.target.value)}
+                          className="bg-black border border-neutral-800 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-neutral-500 focus:outline-none"
+                          required
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        className="w-full bg-neutral-900 border border-neutral-700 text-white hover:bg-neutral-800 py-2 rounded-xl text-xs font-semibold transition flex items-center justify-center space-x-1 active:scale-95"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add Target to Map</span>
+                      </button>
+                    </form>
+                  )}
+                </div>
+
+                {/* Preset Hotspots */}
+                <div className="pt-3 border-t border-neutral-800/80">
+                  <label className="text-xs font-bold uppercase tracking-wider text-neutral-400 block mb-2.5 items-center justify-between">
+                    <span>Observation Targets ({hotspots.length})</span>
+                    <MapPin className="w-3.5 h-3.5 text-white" />
+                  </label>
+                  <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                    {hotspots.map((spot) => {
+                      const IconComp = spot.icon || Mountain;
+                      const isSelected = selectedSpot.id === spot.id;
+                      return (
+                        <button
+                          key={spot.id}
+                          onClick={() => {
+                            setSelectedSpot(spot);
+                            setRadarBand(
+                              spot.band.includes("L-band")
+                                ? "L-band"
+                                : "S-band",
+                            );
+                            setPolarization(spot.pol);
+                          }}
+                          className={`w-full text-left p-3 rounded-2xl border transition-all duration-200 flex items-start space-x-3 active:scale-95 ${
+                            isSelected
+                              ? "bg-neutral-900 border-neutral-600 text-white shadow-xl ring-1 ring-white/20"
+                              : "bg-neutral-950 border-neutral-800 text-neutral-400 hover:border-neutral-700 hover:text-white"
+                          }`}
+                        >
+                          <div
+                            className={`p-2 rounded-xl shrink-0 mt-0.5 ${isSelected ? "bg-neutral-800 text-white border border-neutral-700" : "bg-neutral-900 text-neutral-400 border border-neutral-800"}`}
+                          >
+                            <IconComp className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-xs truncate text-white">
+                              {spot.name}
+                            </div>
+                            <div className="text-[10px] font-mono text-neutral-400 truncate mt-0.5">
+                              {spot.lat.toFixed(2)}°, {spot.lng.toFixed(2)}°
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-neutral-800/80">
+                  <label className="text-xs font-bold uppercase tracking-wider text-neutral-400 block mb-2.5 items-center justify-between">
+                    <span>Radar Sensor Configuration</span>
+                    <Cpu className="w-3.5 h-3.5 text-white" />
+                  </label>
+
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    {["L-band", "S-band"].map((band) => (
+                      <button
+                        key={band}
+                        onClick={() => setRadarBand(band)}
+                        className={`py-2 rounded-xl border text-xs font-mono font-bold transition-all active:scale-95 flex flex-col items-center justify-center ${
+                          radarBand === band
+                            ? "bg-neutral-800 border-neutral-600 text-white shadow-lg"
+                            : "bg-neutral-900 border-neutral-800 text-neutral-400 hover:text-white"
+                        }`}
+                      >
+                        <span>{band}</span>
+                        <span className="text-[9px] font-normal opacity-70">
+                          {band === "L-band"
+                            ? "24 cm λ (NASA)"
+                            : "12 cm λ (ISRO)"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {["HH", "HV", "VV", "VH"].map((pol) => (
+                      <button
+                        key={pol}
+                        onClick={() => setPolarization(pol)}
+                        className={`py-1.5 rounded-xl border text-center text-xs font-mono transition active:scale-95 ${
+                          polarization === pol
+                            ? "bg-neutral-800 border-neutral-600 text-white font-bold shadow-md"
+                            : "bg-neutral-900 border-neutral-800 text-neutral-400 hover:text-white"
+                        }`}
+                      >
+                        {pol}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* SAR Visual Mode Selector */}
+                <div className="pt-4 border-t border-neutral-800/80">
+                  <label className="text-xs font-bold uppercase tracking-wider text-neutral-400 mb-2.5 flex items-center justify-between">
+                    <span>SAR Visualization Mode</span>
+                    <Layers className="w-3.5 h-3.5 text-white" />
+                  </label>
+                  <div className="space-y-1.5">
+                    {SAR_MODES.map((mode) => (
+                      <button
+                        key={mode.id}
+                        onClick={() => setSarMode(mode.id)}
+                        className={`w-full text-left text-xs px-3.5 py-2.5 rounded-2xl border transition-all active:scale-95 flex items-center space-x-2.5 ${
+                          sarMode === mode.id
+                            ? "bg-neutral-800 border-neutral-600 text-white font-medium shadow-lg"
+                            : "bg-neutral-900 border-neutral-800 text-neutral-400 hover:text-white"
+                        }`}
+                      >
+                        <span>{mode.icon}</span>
+                        <span className="truncate">{mode.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Layer Sliders */}
+                <div className="pt-4 border-t border-neutral-800/80 space-y-4">
+                  <label className="text-xs font-bold uppercase tracking-wider text-neutral-400 block items-center justify-between">
+                    <span>InSAR Overlay Controls</span>
+                    <Sliders className="w-3.5 h-3.5 text-white" />
+                  </label>
+
+                  <div>
+                    <div className="flex justify-between text-xs text-neutral-400 mb-1.5">
+                      <span>InSAR Layer Opacity</span>
+                      <span className="font-mono text-white">
+                        {Math.round(opacity * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.05"
+                      max="1.0"
+                      step="0.05"
+                      value={opacity}
+                      onChange={(e) => setOpacity(parseFloat(e.target.value))}
+                      className="w-full h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-white"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-xs text-neutral-400 mb-1.5">
+                      <span>InSAR Coverage Size</span>
+                      <span className="font-mono text-white">
+                        {(overlaySize * 100).toFixed(0)} km
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.05"
+                      max="0.80"
+                      step="0.025"
+                      value={overlaySize}
+                      onChange={(e) =>
+                        setOverlaySize(parseFloat(e.target.value))
+                      }
+                      className="w-full h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-white"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-xs text-neutral-400 mb-1.5">
+                      <span>Palette Ramp</span>
+                      <span className="font-mono text-white text-[10px]">
+                        {COLOR_PALETTES[colormap]?.name.split(" ")[0]}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {Object.keys(COLOR_PALETTES).map((cmapKey) => (
+                        <button
+                          key={cmapKey}
+                          onClick={() => setColormap(cmapKey)}
+                          className={`h-6 rounded-xl border transition-all active:scale-95 ${
+                            colormap === cmapKey
+                              ? "ring-2 ring-white border-white scale-105"
+                              : "border-neutral-800"
+                          }`}
+                          style={{
+                            background: `linear-gradient(to right, ${COLOR_PALETTES[cmapKey].colors.join(", ")})`,
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </aside>
+
+            <main className="flex-1 relative bg-black flex flex-col overflow-hidden">
+              {/* Map HUD Controls */}
+              <div className="absolute top-4 left-4 z-20 flex items-center space-x-2 bg-black/80 backdrop-blur-2xl border border-neutral-800 p-2 rounded-2xl shadow-2xl">
+                <button
+                  onClick={() => setIsPlaying(!isPlaying)}
+                  className="bg-neutral-900 border border-neutral-700 text-white hover:bg-neutral-800 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 transition active:scale-95 shadow-md"
+                >
+                  {isPlaying ? (
+                    <Pause className="w-4 h-4 text-emerald-400 fill-current" />
+                  ) : (
+                    <Play className="w-4 h-4 text-amber-400 fill-current" />
+                  )}
+                  <span>{isPlaying ? "Motion Active" : "Resume Motion"}</span>
+                </button>
+
+                <div className="flex items-center space-x-1 bg-neutral-900 border border-neutral-800 px-2.5 py-1.5 rounded-xl text-[11px] font-mono text-white">
+                  <Clock className="w-3.5 h-3.5 text-neutral-400" />
+                  <span className="text-neutral-400">Speed:</span>
+                  {[0.5, 1, 2].map((spd) => (
+                    <button
+                      key={spd}
+                      onClick={() => setAnimSpeed(spd)}
+                      className={`px-2 py-0.5 rounded-lg border text-xs font-semibold transition active:scale-95 ${
+                        animSpeed === spd
+                          ? "bg-neutral-800 border-neutral-600 text-white shadow-sm"
+                          : "bg-neutral-900 border-transparent text-neutral-400 hover:text-white"
+                      }`}
+                    >
+                      {spd}x
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => setSplitView(!splitView)}
+                  className={`flex items-center space-x-2 text-xs px-3.5 py-2 rounded-xl font-semibold border transition active:scale-95 shadow-md ${
+                    splitView
+                      ? "bg-neutral-800 border-neutral-600 text-white shadow-lg"
+                      : "bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white"
+                  }`}
+                >
+                  <Split className="w-4 h-4" />
+                  <span>Dual-Date Comparison</span>
+                </button>
+
+                <div className="text-[11px] text-neutral-300 font-mono bg-neutral-900/90 px-3 py-1.5 rounded-xl border border-neutral-800 flex items-center space-x-1.5">
+                  <MapPin className="w-3 h-3 text-cyan-400" />
+                  <span>Click map to select target location</span>
+                </div>
+              </div>
+
+              {/* Cursor Telemetry Panel */}
+              <div className="absolute top-4 right-4 z-20 bg-black/80 backdrop-blur-2xl border border-neutral-800 p-4 rounded-2xl shadow-2xl w-72 pointer-events-none">
+                <div className="flex items-center justify-between border-b border-neutral-800 pb-2.5 mb-2.5">
+                  <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center space-x-1.5">
+                    <Crosshair className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Cursor Telemetry</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-white bg-neutral-900 px-2 py-0.5 rounded-full border border-neutral-700">
+                    {radarBand} {polarization}
+                  </span>
+                </div>
+
+                <div className="space-y-2 font-mono text-xs">
+                  <div className="flex justify-between text-neutral-400">
+                    <span>Location:</span>
+                    <span className="text-white font-medium">
+                      {inspectedPixel.lat}°, {inspectedPixel.lng}°
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-neutral-400">
+                    <span>Backscatter (σ0):</span>
+                    <span className="text-cyan-400 font-bold">
+                      {inspectedPixel.db} dB
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-neutral-400">
+                    <span>InSAR Phase (Δφ):</span>
+                    <span className="text-emerald-400 font-bold">
+                      {inspectedPixel.phase}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-neutral-400">
+                    <span>Coherence (γ):</span>
+                    <span className="text-amber-400 font-bold">
+                      {inspectedPixel.coherence}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Leaflet Map Canvas */}
+              <div className="flex-1 relative w-full h-full bg-black">
+                <div
+                  ref={mapContainerRef}
+                  className="absolute inset-0 w-full h-full z-10 cursor-crosshair"
+                />
+
+                {!leafletLoaded && (
+                  <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md">
+                    <Loader2 className="w-8 h-8 text-white animate-spin mb-2" />
+                    <span className="text-xs text-neutral-400 font-mono">
+                      Loading Earth Map Engine...
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Bottom Palette Scale */}
+              <div className="absolute bottom-6 left-6 z-20 bg-black/80 backdrop-blur-2xl border border-neutral-800 p-4 rounded-2xl shadow-2xl w-80">
+                <div className="flex items-center justify-between text-xs font-semibold text-white mb-2">
+                  <span>{COLOR_PALETTES[colormap]?.name}</span>
+                  <span className="font-mono text-[10px] text-neutral-400">
+                    {selectedSpot.unit}
+                  </span>
+                </div>
+                <div
+                  className="h-3 rounded-xl w-full shadow-inner border border-white/10"
+                  style={{
+                    background: `linear-gradient(to right, ${COLOR_PALETTES[colormap]?.colors.join(", ")})`,
+                  }}
+                />
+                <div className="flex justify-between text-[10px] font-mono text-neutral-400 mt-2">
+                  <span>Low (-π)</span>
+                  <span>High (+π)</span>
+                </div>
+              </div>
+            </main>
+          </>
+        )}
+
+        {activeTab === "analytics" && (
+          <div className="flex-1 bg-black p-8 overflow-y-auto space-y-6">
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-4">
+              <div>
+                <h2 className="text-xl font-bold text-white flex items-center space-x-2">
+                  <TrendingUp className="w-5 h-5 text-white" />
+                  <span>
+                    {PREV_YEAR}-{CURRENT_YEAR} InSAR Sequential Displacement &
+                    Coherence Analytics
+                  </span>
+                </h2>
+                <p className="text-xs text-neutral-400 mt-1">
+                  Temporal metrics for target:{" "}
+                  <strong className="text-white">{selectedSpot.name}</strong> (
+                  {selectedSpot.lat.toFixed(4)}°, {selectedSpot.lng.toFixed(4)}
+                  °)
+                </p>
+              </div>
+
+              <div className="bg-neutral-900 border border-neutral-800 px-4 py-2 rounded-2xl text-xs font-mono">
+                <span className="text-neutral-400">Theme: </span>
+                <span className="text-emerald-400 font-bold">
+                  {selectedSpot.theme}
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-neutral-950 border border-neutral-800 p-6 rounded-3xl shadow-2xl space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
+                  <Activity className="w-4 h-4 text-white" />
+                  <span>
+                    {PREV_YEAR}-{CURRENT_YEAR} Dual Frequency Radar Backscatter
+                    Trend (L-band vs S-band)
+                  </span>
+                </h3>
+                <div className="flex items-center space-x-4 text-xs font-mono">
+                  <span className="flex items-center space-x-1.5">
+                    <span className="w-3 h-3 rounded-full bg-cyan-400" />
+                    <span>L-band (24 cm)</span>
+                  </span>
+                  <span className="flex items-center space-x-1.5">
+                    <span className="w-3 h-3 rounded-full bg-emerald-400" />
+                    <span>S-band (12 cm)</span>
+                  </span>
+                  <span className="flex items-center space-x-1.5">
+                    <span className="w-3 h-3 rounded-full bg-rose-500" />
+                    <span>Displacement</span>
+                  </span>
+                </div>
+              </div>
+
+              <div className="h-72 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={selectedSpot.timeData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
+                    <XAxis
+                      dataKey="date"
+                      stroke="#737373"
+                      tick={{ fontSize: 12 }}
+                    />
+                    <YAxis
+                      yAxisId="left"
+                      stroke="#38bdf8"
+                      label={{
+                        value: "Backscatter σ0 (dB)",
+                        angle: -90,
+                        position: "insideLeft",
+                        fill: "#38bdf8",
+                        fontSize: 11,
+                      }}
+                    />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      stroke="#f43f5e"
+                      label={{
+                        value: selectedSpot.unit,
+                        angle: 90,
+                        position: "insideRight",
+                        fill: "#f43f5e",
+                        fontSize: 11,
+                      }}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#0a0a0a",
+                        borderColor: "#262626",
+                        borderRadius: "16px",
+                        fontSize: "12px",
+                      }}
+                    />
+                    <Line
+                      yAxisId="left"
+                      type="monotone"
+                      dataKey="lBand"
+                      stroke="#38bdf8"
+                      strokeWidth={3}
+                      dot={{ r: 5 }}
+                    />
+                    <Line
+                      yAxisId="left"
+                      type="monotone"
+                      dataKey="sBand"
+                      stroke="#10b981"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
+                      dot={{ r: 4 }}
+                    />
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="displacement"
+                      stroke="#f43f5e"
+                      strokeWidth={3}
+                      dot={{ r: 5 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-neutral-950 border border-neutral-800 p-6 rounded-3xl shadow-2xl space-y-3">
+                <h3 className="text-sm font-semibold text-white">
+                  Interferometric Temporal Coherence (γ) Stability
+                </h3>
+                <div className="h-52 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={selectedSpot.timeData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
+                      <XAxis
+                        dataKey="date"
+                        stroke="#737373"
+                        tick={{ fontSize: 11 }}
+                      />
+                      <YAxis
+                        stroke="#f59e0b"
+                        domain={[0, 1]}
+                        tick={{ fontSize: 11 }}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "#0a0a0a",
+                          borderColor: "#262626",
+                          borderRadius: "14px",
+                        }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="coherence"
+                        stroke="#f59e0b"
+                        fill="#f59e0b"
+                        fillOpacity={0.2}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-neutral-950 border border-neutral-800 p-6 rounded-3xl shadow-2xl space-y-3">
+                <h3 className="text-sm font-semibold text-white">
+                  ROI Backscatter dB Value Distribution Histogram
+                </h3>
+                <div className="h-52 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={selectedSpot.histogram}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
+                      <XAxis
+                        dataKey="range"
+                        stroke="#737373"
+                        tick={{ fontSize: 11 }}
+                      />
+                      <YAxis stroke="#06b6d4" tick={{ fontSize: 11 }} />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "#0a0a0a",
+                          borderColor: "#262626",
+                          borderRadius: "14px",
+                        }}
+                      />
+                      <Bar
+                        dataKey="count"
+                        fill="#06b6d4"
+                        radius={[8, 8, 0, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "pipeline" && (
+          <div className="flex-1 bg-black p-8 overflow-y-auto space-y-6">
+            <div className="border-b border-neutral-800 pb-4">
+              <h2 className="text-xl font-bold text-white flex items-center space-x-2">
+                <Code className="w-5 h-5 text-white" />
+                <span>
+                  NASA CMR Search & STAC Pipeline Code Snippets ({CURRENT_YEAR}{" "}
+                  Operational)
+                </span>
+              </h2>
+              <p className="text-xs text-neutral-400 mt-1">
+                Querying NASA CMR REST API for location:{" "}
+                <strong className="text-white">
+                  {selectedSpot.lat.toFixed(4)}°, {selectedSpot.lng.toFixed(4)}°
+                </strong>
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-neutral-950 border border-neutral-800 p-6 rounded-3xl space-y-3 shadow-2xl">
+                <div className="flex items-center space-x-2 text-white">
+                  <Database className="w-5 h-5 text-cyan-400" />
+                  <h3 className="font-semibold text-sm text-white">
+                    1. Active NASA CMR REST Query ({PREV_YEAR}-{CURRENT_YEAR})
+                  </h3>
+                </div>
+                <p className="text-xs text-neutral-400 leading-relaxed">
+                  Automatically generated NASA Earthdata CMR API query searching
+                  for granules covering the spatial bounding box around{" "}
+                  <strong className="text-white">{selectedSpot.name}</strong>.
+                </p>
+                <div className="bg-black p-4 rounded-2xl border border-neutral-800 font-mono text-[11px] text-neutral-300 overflow-x-auto shadow-inner">
+                  {`// Query NASA CMR for selected coordinates (${CURRENT_YEAR} Science Ops):
+const fetchGranulesForLocation = async () => {
+  const bbox = [
+    ${(selectedSpot.lng - 0.5).toFixed(4)}, // min_lon
+    ${(selectedSpot.lat - 0.5).toFixed(4)}, // min_lat
+    ${(selectedSpot.lng + 0.5).toFixed(4)}, // max_lon
+    ${(selectedSpot.lat + 0.5).toFixed(4)}  // max_lat
+  ];
+
+  const url = "https://cmr.earthdata.nasa.gov/search/granules.json"
+    + "?short_name=NISAR_L_GCOV_V1"
+    + \`&bounding_box=\${bbox.join(',')}\`
+    + "&temporal=${PREV_YEAR}-08-01T00:00:00Z,${CURRENT_YEAR}-09-28T00:00:00Z";
+
+  const res = await fetch(url);
+  const data = await res.json();
+  return data.feed.entry;
+};`}
+                </div>
+              </div>
+
+              <div className="bg-neutral-950 border border-neutral-800 p-6 rounded-3xl space-y-3 shadow-2xl">
+                <div className="flex items-center space-x-2 text-white">
+                  <Zap className="w-5 h-5 text-emerald-400" />
+                  <h3 className="font-semibold text-sm text-white">
+                    2. OpenStreetMap Geocoder Function
+                  </h3>
+                </div>
+                <p className="text-xs text-neutral-400 leading-relaxed">
+                  Free client-side geocoding logic used in the search bar to
+                  translate global location names into spatial coordinates.
+                </p>
+                <div className="bg-black p-4 rounded-2xl border border-neutral-800 font-mono text-[11px] text-neutral-300 overflow-x-auto shadow-inner">
+                  {`// Convert place name to Lat/Lng (Free Nominatim REST API)
+const geocodePlace = async (placeName) => {
+  const res = await fetch(
+    \`https://nominatim.openstreetmap.org/search?format=json&q=\${encodeURIComponent(placeName)}&limit=1\`
+  );
+  const data = await res.json();
+  if (data.length > 0) {
+    return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  }
+};`}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
